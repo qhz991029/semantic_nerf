@@ -1,24 +1,25 @@
-
 experiment:
-  scene_file: "PATHtoREPLICA/Replica/mesh/room_0/habitat/" # room_0,room_01, etc.
-  save_dir: "PATHtoLOGS"  # where to store ckpts and rendering
-  dataset_dir: "PATHtoRENDERED_REPLICA_DATA"
-  convention: "opencv"
-  width: 320
-  height: 240
-  gpu: "0"
-  
-  enable_semantic: True
-  enable_depth: True
-  endpoint_feat: False
+    scene_file: "/home/huaizhi_qu/Downloads/room_0/habitat/" # room_0,room_01, etc.
+    save_dir: "/home/huaizhi_qu/workspace/semantic_nerf/logs"  # where to store ckpts and rendering
+    dataset_dir: "/home/huaizhi_qu/Downloads/Replica_Dataset/room_0/Sequence_1"
+    convention: "opencv"
+    width: 320
+    height: 240
+    gpu: "0"
+
+    enable_multitask: True
+    enable_semantic: False
+    enable_surface_normal: True
+    enable_depth: True
+    endpoint_feat: False
 
 model:
-  netdepth: 8
-  netwidth: 256
-  netdepth_fine: 8
-  netwidth_fine: 256
-  chunk: 1024*128  # number of rays processed in parallel, decrease if running out of memory
-  netchunk: 1024*128  # number of pts sent through network in parallel, decrease if running out of memory
+    netdepth: 8
+    netwidth: 256
+    netdepth_fine: 8
+    netwidth_fine: 256
+    chunk: 1024*128  # number of rays processed in parallel, decrease if running out of memory
+    netchunk: 1024*128  # number of pts sent through network in parallel, decrease if running out of memory
 
 render:
     N_rays: 32*32*1  # average number of rays sampled from each sample within a batch
@@ -31,21 +32,21 @@ render:
     multires_views: 4  # 'log2 of max freq for positional encoding (2D direction)'
     raw_noise_std: 1  # 'std dev of noise added to regularize sigma_a output, 1e0 recommended')
     test_viz_factor: 1  # down scaling factor when rendering test and training images
-    no_batching: True  # True-sample random pixels from random images; False-sample from all random pixels from all images
-    depth_range: [0.1, 10.0]
+    no_batching: True  # True: sample random pixels from one random images; False: sample from all random pixels from all images
+    depth_range: [ 0.1, 10.0 ]
     white_bkgd: false  # set to render synthetic data on a white bkgd (always use for dvoxels)
 
 train:
     lrate: 5e-4
     lrate_decay: 250e3
-    N_iters: 200000
+    N_iters: 100000
     wgt_sem: 4e-2
-
-
+    wgt_depth: 1e-2
+    wgt_norm: 1
 
 logging: # logging/saving options
     step_log_print: 1  # 'frequency of console print'
-    step_log_tfb: 500
+    step_log_tfb: 20
     step_save_ckpt: 20000
     step_val: 5000 # frequency of rendering on unseen data
     step_vis_train: 5000

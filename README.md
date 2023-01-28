@@ -47,7 +47,7 @@ After cloning the codes, we can start to run Semantic-NeRF in the root directory
 #### Semantic-NeRF training
 For standard Semantic-NeRF training with full dense semantic supervision. You can simply run following command with a chosen config file specifying data directory and hyper-params.
 ```
-python3 train_SSR_main.py --config_file /SSR/configs/SSR_room0_config.yaml
+python3 train_SSR_main.py --config_file ./SSR/configs/SSR_room0_config.yaml
 ```
 
 Different working modes and set-ups can be chosen via commands:

@@ -30,3 +30,6 @@ SSR/results/
 *.json
 
 SSR/configs/SSR_room0_config_test.yaml
+
+Replica_Dataset/
+results
