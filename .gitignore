@@ -31,5 +31,6 @@ SSR/results/
 
 SSR/configs/SSR_room0_config_test.yaml
 
-Replica_Dataset/
+
+test.py
 results

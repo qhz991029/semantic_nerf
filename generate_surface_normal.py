@@ -1,8 +1,11 @@
 import os
+import shutil
 
 import imageio.v2 as imageio
 import numpy as np
 import torch
+import cv2
+from rich.progress import track
 import torch.nn.functional as F
 
 
@@ -23,9 +26,11 @@ def depth_to_surface_normals(depth: torch.Tensor, surfnorm_scalar=256) -> torch.
     return surface_normals
 
 
-dataset = "Replica_Dataset"
+dataset = "/home/huaizhi_qu/Downloads/Replica_Dataset"
 scenes = os.listdir(dataset)
 for scene in scenes:
+    if scene == "semantic_info" or scene == "readme.txt":
+        continue
     sequences = os.listdir(dataset + "/" + scene)
     for sequence in sequences:
         depth_map_path = os.path.join(dataset, scene, sequence, "depth")
@@ -43,11 +48,21 @@ for scene in scenes:
                 )
             )
         depth_maps = torch.stack(imgs).unsqueeze(1)
-        surface_normals = depth_to_surface_normals(depth_maps).permute(0, 2, 3, 1)
+        surface_normals = (
+            ((depth_to_surface_normals(depth_maps).permute(0, 2, 3, 1) + 1) * (255 / 2))
+            .numpy()
+            .astype(np.uint8)
+        )
         if not os.path.exists(surface_normal_path):
             os.makedirs(surface_normal_path)
-        for i in range(len(surface_normals)):
-            torch.save(surface_normals[i].clone(), surface_normal_path + f"/surface_normal_{i}.pt")
+        else:
+            shutil.rmtree(surface_normal_path)
+            os.makedirs(surface_normal_path)
+        for i in track(range(len(surface_normals))):
+            # torch.save(surface_normals[i].clone(), surface_normal_path + f"/surface_normal_{i}.pt")
+            cv2.imwrite(
+                surface_normal_path + f"/surface_normal_{i}.png", surface_normals[i]
+            )
         del imgs
         del depth_maps
         del surface_normals

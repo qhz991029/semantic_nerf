@@ -42,8 +42,8 @@ class ReplicaDatasetCache(Dataset):
             key=lambda file_name: int(file_name.split("_")[-1][:-4]),
         )
         self.surface_normal_list = sorted(
-            glob.glob(self.surface_normal_dir + "/surface_normal*.pt"),
-            key=lambda file_name: int(file_name.split("_")[-1][:-3]),
+            glob.glob(self.surface_normal_dir + "/surface_normal*.png"),
+            key=lambda file_name: int(file_name.split("_")[-1][:-4]),
         )
         self.semantic_list = sorted(
             glob.glob(self.semantic_class_dir + "/semantic_class_*.png"),
@@ -80,7 +80,13 @@ class ReplicaDatasetCache(Dataset):
             depth = (
                 cv2.imread(self.depth_list[idx], cv2.IMREAD_UNCHANGED) / 1000.0
             )  # uint16 mm depth, then turn depth from mm to meter
-            surface_normal = torch.load(self.surface_normal_list[idx])
+            surface_normal = (
+                    torch.from_numpy(
+                        cv2.imread(self.surface_normal_list[idx]).astype(np.float32)
+                    )
+                    / (255 / 2)
+                    - 1
+            )
             semantic = cv2.imread(self.semantic_list[idx], cv2.IMREAD_UNCHANGED)
             if self.semantic_instance_dir is not None:
                 instance = cv2.imread(
@@ -127,7 +133,13 @@ class ReplicaDatasetCache(Dataset):
             depth = (
                 cv2.imread(self.depth_list[idx], cv2.IMREAD_UNCHANGED) / 1000.0
             )  # uint16 mm depth, then turn depth from mm to meter
-            surface_normal = torch.load(self.surface_normal_list[idx])
+            surface_normal = (
+                torch.from_numpy(
+                    cv2.imread(self.surface_normal_list[idx]).astype(np.float32)
+                )
+                / (255 / 2)
+                - 1
+            )
             semantic = cv2.imread(self.semantic_list[idx], cv2.IMREAD_UNCHANGED)
             if self.semantic_instance_dir is not None:
                 instance = cv2.imread(
@@ -165,11 +177,15 @@ class ReplicaDatasetCache(Dataset):
                 self.test_samples["instance"].append(instance)
             self.test_samples["T_wc"].append(T_wc)
 
-        for key in self.test_samples.keys():  # transform list of np array to array with batch dimension
+        for (
+            key
+        ) in (
+            self.test_samples.keys()
+        ):  # transform list of np array to array with batch dimension
             if key != "surface_normal":
                 self.train_samples[key] = np.asarray(self.train_samples[key])
                 self.test_samples[key] = np.asarray(self.test_samples[key])
-            else: # surface normal is stored as .pt file
+            else:  # surface normal is stored as .pt file
                 self.train_samples[key] = torch.stack(self.train_samples[key])
                 self.test_samples[key] = torch.stack(self.test_samples[key])
 

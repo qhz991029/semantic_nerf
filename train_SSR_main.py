@@ -31,7 +31,7 @@ def train():
     parser.add_argument(
         "--config_file",
         type=str,
-        default="/home/shuaifeng/Documents/PhD_Research/CodeRelease/SemanticSceneRepresentations/SSR/configs/SSR_room0_config_test.yaml",
+        default="/home/huaizhi_qu/workspace/semantic_nerf/SSR/configs/SSR_Replica_config.yaml",
         help="config file name.",
     )
     parser.add_argument(
