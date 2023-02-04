@@ -13,8 +13,10 @@ import torch.nn as nn
 import torch.nn.functional as F
 import yaml
 from imgviz import label_colormap, depth2rgb
-from tqdm import tqdm
+from torchmetrics.classification import MulticlassJaccardIndex
+import pandas as pd
 
+from tqdm import tqdm
 from SSR.models.model_utils import raw2outputs
 from SSR.models.model_utils import run_network
 from SSR.models.rays import sampling_index, sample_pdf, create_rays
@@ -1403,6 +1405,7 @@ class SSRTrainer(object):
     def step(self, global_step):
         # Misc
         img2mse = lambda x, y: torch.mean((x - y) ** 2)
+        self.global_step = global_step
         mse2psnr = (
             lambda x: -10.0 * torch.log(x) / torch.log(torch.Tensor([10.0]).cuda())
         )
@@ -1553,12 +1556,11 @@ class SSRTrainer(object):
         wgt_depth_loss = float(self.config["train"]["wgt_depth"])
         wgt_norm_loss = float(self.config["train"]["wgt_norm"])
         total_loss = total_img_loss
-        if self.enable_semantic:
-            total_loss += total_sem_loss * wgt_sem_loss
-        # if self.enable_depth:
-        #     total_loss += total_depth_loss * wgt_depth_loss
-        if self.enable_surface_normal:
-            total_loss -= total_norm_loss * wgt_norm_loss
+        if self.enable_multitask:
+            if self.enable_semantic:
+                total_loss += total_sem_loss * wgt_sem_loss
+            if self.enable_surface_normal:
+                total_loss -= total_norm_loss * wgt_norm_loss
 
         total_loss.backward()
         self.optimizer.step()
@@ -1569,426 +1571,9 @@ class SSRTrainer(object):
         new_lrate = self.lrate * (decay_rate ** (global_step / decay_steps))
         for param_group in self.optimizer.param_groups:
             param_group["lr"] = new_lrate
-        ################################
-
-        # tensorboard-logging
-        # visualize loss curves
-        # if global_step % float(self.config["logging"]["step_log_tfb"]) == 0:
-        #     self.tfb_viz.vis_scalars(
-        #         global_step,
-        #         [
-        #             img_loss_coarse,
-        #             img_loss_fine,
-        #             total_img_loss,
-        #             semantic_loss_coarse,
-        #             semantic_loss_fine,
-        #             total_depth_loss,
-        #             total_norm_loss,
-        #             total_sem_loss,
-        #             total_sem_loss * wgt_sem_loss,
-        #             total_loss,
-        #         ],
-        #         [
-        #             "Train/Loss/img_loss_coarse",
-        #             "Train/Loss/img_loss_fine",
-        #             "Train/Loss/total_img_loss",
-        #             "Train/Loss/semantic_loss_coarse",
-        #             "Train/Loss/semantic_loss_fine",
-        #             "Train/Loss/total_depth_loss",
-        #             "Train/Loss/total_norm_loss",
-        #             "Train/Loss/total_sem_loss",
-        #             "Train/Loss/weighted_total_sem_loss",
-        #             "Train/Loss/total_loss",
-        #         ],
-        #     )
-        #
-        #     # add raw transparancy value into tfb histogram
-        #     trans_coarse = output_dict["raw_coarse"][..., 3]
-        #     self.tfb_viz.vis_histogram(global_step, trans_coarse, "trans_coarse")
-        #     if self.N_importance > 0:
-        #         trans_fine = output_dict["raw_fine"][..., 3]
-        #         self.tfb_viz.vis_histogram(global_step, trans_fine, "trans_fine")
-        #
-        #     self.tfb_viz.vis_scalars(
-        #         global_step,
-        #         [psnr_coarse, psnr_fine],
-        #         ["Train/Metric/psnr_coarse", "Train/Metric/psnr_fine"],
-        #     )
-
-        # Rest is logging
-        # saving ckpts regularly
-        # if global_step % float(self.config["logging"]["step_save_ckpt"]) == 0:
-        #     ckpt_dir = os.path.join(self.save_dir, "checkpoints")
-        #     if not os.path.exists(ckpt_dir):
-        #         os.makedirs(ckpt_dir)
-        #
-        #     ckpt_file = os.path.join(ckpt_dir, "{:06d}.ckpt".format(global_step))
-        #     torch.save(
-        #         {
-        #             "global_step": global_step,
-        #             "network_coarse_state_dict": self.ssr_net_coarse.state_dict(),
-        #             "network_fine_state_dict": self.ssr_net_fine.state_dict(),
-        #             "optimizer_state_dict": self.optimizer.state_dict(),
-        #         },
-        #         ckpt_file,
-        #     )
-        #     print("Saved checkpoints at", ckpt_file)
-        #
-        # # render and save training-set images
-        # if (
-        #     global_step % self.config["logging"]["step_vis_train"] == 0
-        #     and global_step > 0
-        # ):
-        #     self.training = False  # enable testing mode before rendering results, need to set back during training!
-        #     self.ssr_net_coarse.eval()
-        #     self.ssr_net_fine.eval()
-        #     trainsavedir = os.path.join(
-        #         self.config["experiment"]["save_dir"],
-        #         "train_render",
-        #         "step_{:06d}".format(global_step),
-        #     )
-        #     os.makedirs(trainsavedir, exist_ok=True)
-        #     print(" {} train images".format(self.num_train))
-        #     with torch.no_grad():
-        #         # rgbs, disps, deps, vis_deps, sems, vis_sems
-        #         (
-        #             rgbs,
-        #             disps,
-        #             deps,
-        #             vis_deps,
-        #             sems,
-        #             vis_sems,
-        #             sem_uncers,
-        #             vis_sem_uncers,
-        #         ) = self.render_path(self.rays_vis, save_dir=trainsavedir)
-        #         """
-        #         render_path is the function for rendering when inference
-        #         """
-        #         #  numpy array of shape [B,H,W,C] or [B,H,W]
-        #     print("Saved training set")
-
-        #     self.training = True  # set training flag back after rendering images
-        #     self.ssr_net_coarse.train()
-        #     self.ssr_net_fine.train()
-        #
-        #     with torch.no_grad():
-        #         if self.enable_multitask:
-        #             # mask out void regions for better visualisation
-        #             for idx in range(vis_sems.shape[0]):
-        #                 vis_sems[idx][
-        #                     self.train_semantic_clean_scaled[idx] == self.ignore_label,
-        #                     :,
-        #                 ] = 0
-        #
-        #         batch_train_img_mse = img2mse(
-        #             torch.from_numpy(rgbs), self.train_image_scaled.cpu()
-        #         )
-        #         batch_train_img_psnr = mse2psnr(batch_train_img_mse)
-        #
-        #         self.tfb_viz.vis_scalars(
-        #             global_step,
-        #             [batch_train_img_psnr, batch_train_img_mse],
-        #             ["Train/Metric/batch_PSNR", "Train/Metric/batch_MSE"],
-        #         )
-        #
-        #     imageio.mimwrite(
-        #         os.path.join(trainsavedir, "rgb.mp4"), to8b_np(rgbs), fps=30, quality=8
-        #     )
-        #     imageio.mimwrite(
-        #         os.path.join(trainsavedir, "dep.mp4"), vis_deps, fps=30, quality=8
-        #     )
-        #     imageio.mimwrite(
-        #         os.path.join(trainsavedir, "disps.mp4"),
-        #         to8b_np(disps / np.max(disps)),
-        #         fps=30,
-        #         quality=8,
-        #     )
-        #     if self.enable_multitask:
-        #         imageio.mimwrite(
-        #             os.path.join(trainsavedir, "sem.mp4"), vis_sems, fps=30, quality=8
-        #         )
-        #         imageio.mimwrite(
-        #             os.path.join(trainsavedir, "sem_uncertainty.mp4"),
-        #             vis_sem_uncers,
-        #             fps=30,
-        #             quality=8,
-        #         )
-        #
-        #     # add rendered image into tf-board
-        #     self.tfb_viz.tb_writer.add_image(
-        #         "Train/rgb", rgbs, global_step, dataformats="NHWC"
-        #     )
-        #     self.tfb_viz.tb_writer.add_image(
-        #         "Train/depth", vis_deps, global_step, dataformats="NHWC"
-        #     )
-        #     self.tfb_viz.tb_writer.add_image(
-        #         "Train/disps",
-        #         np.expand_dims(disps, -1),
-        #         global_step,
-        #         dataformats="NHWC",
-        #     )
-        #
-        #     # evaluate depths
-        #     depth_metrics_dic = calculate_depth_metrics(
-        #         depth_trgt=self.train_depth_scaled, depth_pred=deps
-        #     )
-        #     self.tfb_viz.vis_scalars(
-        #         global_step,
-        #         list(depth_metrics_dic.values()),
-        #         ["Train/Metric/" + k for k in list(depth_metrics_dic.keys())],
-        #     )
-        #
-        #     if self.enable_multitask:
-        #         self.tfb_viz.tb_writer.add_image(
-        #             "Train/vis_sem_label", vis_sems, global_step, dataformats="NHWC"
-        #         )
-        #         self.tfb_viz.tb_writer.add_image(
-        #             "Train/vis_sem_uncertainty",
-        #             vis_sem_uncers,
-        #             global_step,
-        #             dataformats="NHWC",
-        #         )
-        #
-        #         # add segmentation quantative metrics during training into tfb
-        #         (
-        #             miou_train,
-        #             miou_train_validclass,
-        #             total_accuracy_train,
-        #             class_average_accuracy_train,
-        #             ious_train,
-        #         ) = calculate_segmentation_metrics(
-        #             true_labels=self.train_semantic_clean_scaled,
-        #             predicted_labels=sems,
-        #             number_classes=self.num_valid_semantic_class,
-        #             ignore_label=self.ignore_label,
-        #         )
-        #         self.tfb_viz.vis_scalars(
-        #             global_step,
-        #             [
-        #                 miou_train,
-        #                 miou_train_validclass,
-        #                 total_accuracy_train,
-        #                 class_average_accuracy_train,
-        #             ],
-        #             [
-        #                 "Train/Metric/mIoU",
-        #                 "Train/Metric/mIoU_validclass",
-        #                 "Train/Metric/total_acc",
-        #                 "Train/Metric/avg_acc",
-        #             ],
-        #         )
-        #
-        #         tqdm.write(
-        #             f"[Training Metric] Iter: {global_step} "
-        #             f"img_loss: {total_img_loss.item()}, semantic_loss: {(total_sem_loss*wgt_sem_loss).item()},"
-        #             f"psnr_coarse: {psnr_coarse.item()}, psnr_fine: {psnr_fine.item()},"
-        #             f"mIoU: {miou_train}, total_acc: {total_accuracy_train}, avg_acc: {class_average_accuracy_train}"
-        #         )
-        #
-        #         if dataset_type == "replica_nyu_cnn":
-        #             # we also evaluate the rendering against the trained CNN labels in addition to perfect GT labels
-        #             (
-        #                 miou_train,
-        #                 miou_train_validclass,
-        #                 total_accuracy_train,
-        #                 class_average_accuracy_train,
-        #                 ious_train,
-        #             ) = calculate_segmentation_metrics(
-        #                 true_labels=self.train_semantic_gt_scaled,
-        #                 predicted_labels=sems,
-        #                 number_classes=self.num_valid_semantic_class,
-        #                 ignore_label=self.ignore_label,
-        #             )
-        #
-        #             self.tfb_viz.vis_scalars(
-        #                 global_step,
-        #                 [
-        #                     miou_train,
-        #                     miou_train_validclass,
-        #                     total_accuracy_train,
-        #                     class_average_accuracy_train,
-        #                 ],
-        #                 [
-        #                     "Train/Metric/mIoU_GT",
-        #                     "Train/Metric/mIoU_GT_validclass",
-        #                     "Train/Metric/total_acc_GT",
-        #                     "Train/Metric/avg_acc_GT",
-        #                 ],
-        #             )
-        #
-        #             tqdm.write(
-        #                 f"[Training Metric against GT Preds] Iter: {global_step} "
-        #                 f"mIoU: {miou_train}, total_acc: {total_accuracy_train}, avg_acc: {class_average_accuracy_train}"
-        #             )
-        #
-        # # render and save test images, corresponding videos
-        # if global_step % self.config["logging"]["step_val"] == 0 and global_step > 0:
-        #     self.training = False  # enable testing mode before rendering results, need to set back during training!
-        #     self.ssr_net_coarse.eval()
-        #     self.ssr_net_fine.eval()
-        #     testsavedir = os.path.join(
-        #         self.config["experiment"]["save_dir"],
-        #         "test_render",
-        #         "step_{:06d}".format(global_step),
-        #     )
-        #     os.makedirs(testsavedir, exist_ok=True)
-        #     print(" {} test images".format(self.num_test))
-        #
-        #     self.training = True  # set training flag back after rendering images
-        #     self.ssr_net_coarse.train()
-        #     self.ssr_net_fine.train()
-        #
-        #     with torch.no_grad():
-        #         if self.enable_multitask:
-        #             # mask out void regions for better visualisation
-        #             for idx in range(vis_sems.shape[0]):
-        #                 vis_sems[idx][
-        #                     self.test_semantic_scaled[idx] == self.ignore_label, :
-        #                 ] = 0
-        #
-        #         batch_test_img_mse = img2mse(
-        #             torch.from_numpy(rgbs), self.test_image_scaled.cpu()
-        #         )
-        #         batch_test_img_psnr = mse2psnr(batch_test_img_mse)
-        #
-        #         self.tfb_viz.vis_scalars(
-        #             global_step,
-        #             [batch_test_img_psnr, batch_test_img_mse],
-        #             ["Test/Metric/batch_PSNR", "Test/Metric/batch_MSE"],
-        #         )
-        #
-        #     imageio.mimwrite(
-        #         os.path.join(testsavedir, "rgb.mp4"), to8b_np(rgbs), fps=30, quality=8
-        #     )
-        #     imageio.mimwrite(
-        #         os.path.join(testsavedir, "dep.mp4"), vis_deps, fps=30, quality=8
-        #     )
-        #     imageio.mimwrite(
-        #         os.path.join(testsavedir, "disps.mp4"),
-        #         to8b_np(disps / np.max(disps)),
-        #         fps=30,
-        #         quality=8,
-        #     )
-        #     if self.enable_multitask:
-        #         imageio.mimwrite(
-        #             os.path.join(testsavedir, "sem.mp4"), vis_sems, fps=30, quality=8
-        #         )
-        #         imageio.mimwrite(
-        #             os.path.join(testsavedir, "sem_uncertainty.mp4"),
-        #             vis_sem_uncers,
-        #             fps=30,
-        #             quality=8,
-        #         )
-        #
-        #     # add rendered image into tf-board
-        #     self.tfb_viz.tb_writer.add_image(
-        #         "Test/rgb", rgbs, global_step, dataformats="NHWC"
-        #     )
-        #     self.tfb_viz.tb_writer.add_image(
-        #         "Test/depth", vis_deps, global_step, dataformats="NHWC"
-        #     )
-        #     self.tfb_viz.tb_writer.add_image(
-        #         "Test/disps", np.expand_dims(disps, -1), global_step, dataformats="NHWC"
-        #     )
-        #
-        #     # evaluate depths
-        #     depth_metrics_dic = calculate_depth_metrics(
-        #         depth_trgt=self.test_depth_scaled, depth_pred=deps
-        #     )
-        #     self.tfb_viz.vis_scalars(
-        #         global_step,
-        #         list(depth_metrics_dic.values()),
-        #         ["Test/Metric/" + k for k in list(depth_metrics_dic.keys())],
-        #     )
-        #     if self.enable_multitask:
-        #         self.tfb_viz.tb_writer.add_image(
-        #             "Test/vis_sem_label", vis_sems, global_step, dataformats="NHWC"
-        #         )
-        #         self.tfb_viz.tb_writer.add_image(
-        #             "Test/vis_sem_uncertainty",
-        #             vis_sem_uncers,
-        #             global_step,
-        #             dataformats="NHWC",
-        #         )
-        #
-        #         # add segmentation quantative metrics during testung into tfb
-        #         (
-        #             miou_test,
-        #             miou_test_validclass,
-        #             total_accuracy_test,
-        #             class_average_accuracy_test,
-        #             ious_test,
-        #         ) = calculate_segmentation_metrics(
-        #             true_labels=self.test_semantic_scaled,
-        #             predicted_labels=sems,
-        #             number_classes=self.num_valid_semantic_class,
-        #             ignore_label=self.ignore_label,
-        #         )
-        #         # number_classes=self.num_semantic_class-1 to exclude void class
-        #         self.tfb_viz.vis_scalars(
-        #             global_step,
-        #             [
-        #                 miou_test,
-        #                 miou_test_validclass,
-        #                 total_accuracy_test,
-        #                 class_average_accuracy_test,
-        #             ],
-        #             [
-        #                 "Test/Metric/mIoU",
-        #                 "Test/Metric/mIoU_validclass",
-        #                 "Test/Metric/total_acc",
-        #                 "Test/Metric/avg_acc",
-        #             ],
-        #         )
-        #
-        #         if dataset_type == "replica_nyu_cnn":
-        #             # we also evaluate the rendering against the trained CNN labels in addition to perfect GT labels
-        #             (
-        #                 miou_test,
-        #                 miou_test_validclass,
-        #                 total_accuracy_test,
-        #                 class_average_accuracy_test,
-        #                 ious_test,
-        #             ) = calculate_segmentation_metrics(
-        #                 true_labels=self.test_semantic_gt_scaled,
-        #                 predicted_labels=sems,
-        #                 number_classes=self.num_valid_semantic_class,
-        #                 ignore_label=self.ignore_label,
-        #             )
-        #             self.tfb_viz.vis_scalars(
-        #                 global_step,
-        #                 [
-        #                     miou_test,
-        #                     miou_test_validclass,
-        #                     total_accuracy_test,
-        #                     class_average_accuracy_test,
-        #                 ],
-        #                 [
-        #                     "Test/Metric/mIoU_GT",
-        #                     "Test/Metric/mIoU_GT_validclass",
-        #                     "Test/Metric/total_acc_GT",
-        #                     "Test/Metric/avg_acc_GT",
-        #                 ],
-        #             )
-        #
-        #             tqdm.write(
-        #                 f"[Testing Metric against GT Preds] Iter: {global_step} "
-        #                 f"mIoU: {miou_test}, total_acc: {total_accuracy_test}, avg_acc: {class_average_accuracy_test}"
-        #             )
-        #
-        # if global_step % self.config["logging"]["step_log_print"] == 0:
-        #     tqdm.write(
-        #         f"[TRAIN] Iter: {global_step} "
-        #         f"Loss: {total_loss.item()} "
-        #         f"rgb_total_loss: {total_img_loss.item()}, rgb_coarse: {img_loss_coarse.item()}, rgb_fine: {img_loss_fine.item()}, "
-        #         f"depth_total_loss: {total_depth_loss.item()}, depth_coarse: {depth_loss_coarse.item()}, depth_fine: {depth_loss_fine.item()}, "
-        #         f"norm_total_loss: {total_norm_loss.item()}, norm_coarse: {surface_normal_loss_coarse.item()}, norm_fine: {surface_normal_loss_fine.item()}, "
-        #         f"sem_total_loss: {total_sem_loss.item()}, weighted_sem_total_loss: {total_sem_loss.item()*wgt_sem_loss}, "
-        #         f"semantic_loss: {semantic_loss_coarse.item()}, semantic_fine: {semantic_loss_fine.item()}, "
-        #         f"PSNR_coarse: {psnr_coarse.item()}, PSNR_fine: {psnr_fine.item()}"
-        #     )
 
     def test(self):
+        IoU = MulticlassJaccardIndex(num_classes=self.num_valid_semantic_class, ignore_index=self.ignore_label).cuda()
         mse2psnr = lambda x: (
             -10.0 * torch.log(x) / torch.log(torch.Tensor([10.0]).cuda())
         ).squeeze()
@@ -2015,7 +1600,7 @@ class SSRTrainer(object):
         depth_coarse = output_dict["depth_coarse"]  # N_rays
         acc_coarse = output_dict["acc_coarse"]  # N_rays
         if self.enable_multitask:
-            # sem_logits_coarse = output_dict["sem_logits_coarse"]  # N_rays x num_classes
+            sem_logits_coarse = output_dict["sem_logits_coarse"]  # N_rays x num_classes
             # sem_label_coarse = logits_2_label(sem_logits_coarse)  # N_rays
             surface_normal_coarse = output_dict["surface_normal_coarse"]
         if self.N_importance > 0:
@@ -2025,16 +1610,17 @@ class SSRTrainer(object):
             acc_fine = output_dict["acc_fine"]
             z_std = output_dict["z_std"]  # N_rays
             if self.enable_multitask:
-                # sem_logits_fine = output_dict["sem_logits_fine"]
+                sem_logits_fine = output_dict["sem_logits_fine"]
                 # sem_label_fine = logits_2_label(sem_logits_fine)
                 surface_normal_fine = output_dict["surface_normal_fine"]
         img_loss_coarse = F.mse_loss(rgb_coarse, sampled_gt_rgb)
         if self.enable_multitask and sematic_available:
-            semantic_loss_coarse = torch.tensor(0)
+            semantic_loss_coarse = F.cross_entropy(sem_logits_coarse, sampled_gt_semantic - 1, ignore_index=self.ignore_label)
             depth_loss_coarse = F.mse_loss(depth_coarse, sampled_gt_depth)
             surface_normal_loss_coarse = F.cosine_similarity(
                 surface_normal_coarse, sampled_surface_normal
             ).mean()
+            iou_coarse = IoU(sem_logits_coarse, sampled_gt_semantic - 1)
         else:
             semantic_loss_coarse = torch.tensor(0)
             depth_loss_coarse = torch.tensor(0)
@@ -2046,11 +1632,12 @@ class SSRTrainer(object):
         if self.N_importance > 0:
             img_loss_fine = F.mse_loss(rgb_fine, sampled_gt_rgb)
             if self.enable_multitask and sematic_available:
-                semantic_loss_fine = torch.tensor(0)
+                semantic_loss_fine = F.cross_entropy(sem_logits_fine, sampled_gt_semantic - 1, ignore_index=self.ignore_label)
                 depth_loss_fine = F.mse_loss(depth_fine, sampled_gt_depth)
                 surface_normal_loss_fine = F.cosine_similarity(
                     surface_normal_fine, sampled_surface_normal
                 ).mean()
+                iou_fine = IoU(sem_logits_fine, sampled_gt_semantic - 1)
             else:
                 semantic_loss_fine = torch.tensor(0)
                 depth_loss_fine = torch.tensor(0)
@@ -2067,208 +1654,36 @@ class SSRTrainer(object):
         total_depth_loss = depth_loss_coarse + depth_loss_fine
         total_norm_loss = surface_normal_loss_coarse + surface_normal_loss_fine
 
-        tqdm.write(
-            "image psnr: {:.4f}, semantic loss: {:.4f}, surface normal similarity: {:.6f}, depth loss: {:.6f}".format(
+        rich.print(
+            "image psnr: {:.4f}, IoU: {:.4f}, surface normal similarity: {:.6f}, depth loss: {:.6f}".format(
                 psnr_fine,
-                semantic_loss_fine,
+                iou_fine if self.enable_semantic else 0,
                 surface_normal_loss_fine if self.enable_surface_normal else 0,
                 depth_loss_fine if self.enable_depth else 0,
             )
         )
 
-    def render_path(self, rays, save_dir=None):
-
-        rgbs = []
-        disps = []
-
-        deps = []
-        surf_norms = []
-        vis_deps = []
-
-        sems = []
-        vis_sems = []
-
-        entropys = []
-        vis_entropys = []
-
-        to8b_np = lambda x: (255 * np.clip(x, 0, 1)).astype(np.uint8)
-        to8b = lambda x: (255 * torch.clamp(x, 0, 1)).type(torch.uint8)
-        logits_2_label = lambda x: torch.argmax(
-            torch.nn.functional.softmax(x, dim=-1), dim=-1
-        )
-        logits_2_uncertainty = lambda x: torch.sum(
-            -F.log_softmax(x, dim=-1) * F.softmax(x, dim=-1), dim=-1, keepdim=True
-        )
-
-        t = time.time()
-        for i, c2w in enumerate(rich.progress.track(rays)):
-            print(i, time.time() - t)
-            t = time.time()
-            output_dict = self.render_rays_chunk(
-                rays[i], self.chunk
-            )  # render rays by chunks to avoid OOM
-            rgb_coarse = output_dict["rgb_coarse"]
-            disp_coarse = output_dict["disp_coarse"]
-            depth_coarse = output_dict["depth_coarse"]
-            surface_normal_coarse = output_dict["surface_normal_coarse"]
-
-            rgb = rgb_coarse
-            depth = depth_coarse
-            disp = disp_coarse
-            surface_normal = surface_normal_coarse
-
-            if self.enable_multitask:
-                sem_label_coarse = logits_2_label(output_dict["sem_logits_coarse"])
-                sem_uncertainty_coarse = logits_2_uncertainty(
-                    output_dict["sem_logits_coarse"]
-                )
-                vis_sem_label_coarse = self.valid_colour_map[sem_label_coarse]
-                # shift pred label by +1 to shift the first valid class to use the first valid colour-map instead of the void colour-map
-                sem_label = sem_label_coarse
-                vis_sem = vis_sem_label_coarse
-                sem_uncertainty = sem_uncertainty_coarse
-
-            if self.N_importance > 0:
-                rgb_fine = output_dict["rgb_fine"]
-                depth_fine = output_dict["depth_fine"]
-                disp_fine = output_dict["disp_fine"]
-                surface_normal_fine = output_dict["surface_normal_fine"]
-
-                rgb = rgb_fine
-                depth = depth_fine
-                disp = disp_fine
-                surface_normal = surface_normal_fine
-
-                if self.enable_multitask:
-                    sem_label_fine = logits_2_label(output_dict["sem_logits_fine"])
-                    sem_uncertainty_fine = logits_2_uncertainty(
-                        output_dict["sem_logits_fine"]
-                    )
-                    vis_sem_label_fine = self.valid_colour_map[sem_label_fine]
-                    # shift pred label by +1 to shift the first valid class to use the first valid colour-map instead of the void colour-map
-                    sem_label = sem_label_fine
-                    vis_sem = vis_sem_label_fine
-                    sem_uncertainty = sem_uncertainty_fine
-
-            rgb = rgb.cpu().numpy().reshape((self.H_scaled, self.W_scaled, 3))
-            depth = depth.cpu().numpy().reshape((self.H_scaled, self.W_scaled))
-            disp = disp.cpu().numpy().reshape((self.H_scaled, self.W_scaled))
-            surface_normal = (
-                surface_normal.cpu().numpy().reshape((self.H_scaled, self.W_scaled))
-            )
-
-            rgbs.append(rgb)
-            disps.append(disp)
-            surf_norms.append(surface_normal)
-            deps.append(depth)  # save depth in mm
-            vis_deps.append(depth2rgb(depth, min_value=self.near, max_value=self.far))
-
-            if self.enable_multitask:
-                sem_label = (
-                    sem_label.cpu()
-                    .numpy()
-                    .astype(np.uint8)
-                    .reshape((self.H_scaled, self.W_scaled))
-                )
-                vis_sem = (
-                    vis_sem.cpu()
-                    .numpy()
-                    .astype(np.uint8)
-                    .reshape((self.H_scaled, self.W_scaled, 3))
-                )
-                sem_uncertainty = (
-                    sem_uncertainty.cpu()
-                    .numpy()
-                    .reshape((self.H_scaled, self.W_scaled))
-                )
-                vis_sem_uncertainty = depth2rgb(sem_uncertainty)
-
-                sems.append(sem_label)
-                vis_sems.append(vis_sem)
-
-                entropys.append(sem_uncertainty)
-                vis_entropys.append(vis_sem_uncertainty)
-
-            if i == 0:
-                print(rgb.shape, disp.shape)
-
-            # if save_dir is not None:
-            #     assert os.path.exists(save_dir)
-            #     rgb8 = to8b_np(rgbs[-1])
-            #     disp = disps[-1].astype(np.uint16)
-            #     dep_mm = (deps[-1] * 1000).astype(np.uint16)
-            #     vis_dep = vis_deps[-1]
-            #
-            #     rgb_filename = os.path.join(save_dir, "rgb_{:03d}.png".format(i))
-            #     disp_filename = os.path.join(save_dir, "disp_{:03d}.png".format(i))
-            #
-            #     depth_filename = os.path.join(save_dir, "depth_{:03d}.png".format(i))
-            #     vis_depth_filename = os.path.join(
-            #         save_dir, "vis_depth_{:03d}.png".format(i)
-            #     )
-            #
-            #     imageio.imwrite(rgb_filename, rgb8)
-            #     imageio.imwrite(disp_filename, disp, format="png", prefer_uint8=False)
-            #
-            #     imageio.imwrite(
-            #         depth_filename, dep_mm, format="png", prefer_uint8=False
-            #     )
-            #     imageio.imwrite(vis_depth_filename, vis_dep)
-            #
-            #     if self.enable_multitask:
-            #
-            #         label_filename = os.path.join(
-            #             save_dir, "label_{:03d}.png".format(i)
-            #         )
-            #         vis_label_filename = os.path.join(
-            #             save_dir, "vis_label_{:03d}.png".format(i)
-            #         )
-            #
-            #         entropy_filename = os.path.join(
-            #             save_dir, "entropy_{:03d}.png".format(i)
-            #         )
-            #         vis_entropy_filename = os.path.join(
-            #             save_dir, "vis_entropy_{:03d}.png".format(i)
-            #         )
-            #         sem = sems[-1]
-            #         vis_sem = vis_sems[-1]
-            #
-            #         sem_uncer = to8b_np(entropys[-1])
-            #         vis_sem_uncer = vis_entropys[-1]
-            #
-            #         imageio.imwrite(label_filename, sem)
-            #         imageio.imwrite(vis_label_filename, vis_sem)
-            #
-            #         imageio.imwrite(label_filename, sem)
-            #         imageio.imwrite(vis_label_filename, vis_sem)
-            #
-            #         imageio.imwrite(entropy_filename, sem_uncer)
-            #         imageio.imwrite(vis_entropy_filename, vis_sem_uncer)
-
-        rgbs = np.stack(rgbs, 0)
-        disps = np.stack(disps, 0)
-        deps = np.stack(deps, 0)
-        surf_norms = np.stack(surf_norms, 0)
-        vis_deps = np.stack(vis_deps, 0)
-
+        file = "/home/sw99/huaizhi_qu/semantic_nerf/results/{}".format(self.config["train"]["N_iters"])
         if self.enable_multitask:
-            sems = np.stack(sems, 0)
-            vis_sems = np.stack(vis_sems, 0)
-            entropys = np.stack(entropys, 0)
-            vis_entropys = np.stack(vis_entropys, 0)
-        else:
-            sems = None
-            vis_sems = None
-            entropys = None
-            vis_entropys = None
-        return (
-            rgbs,
-            disps,
-            deps,
-            surf_norms,
-            vis_deps,
-            sems,
-            vis_sems,
-            entropys,
-            vis_entropys,
+            file += "_multitask"
+        if self.enable_semantic:
+            file += "_semantic"
+        if self.enable_depth:
+            file += "_depth"
+        if self.enable_surface_normal:
+            file += "_norm"
+        file += ".csv"
+        pd.DataFrame.from_dict(
+            {
+                "step": [self.global_step],
+                "psnr": [psnr_fine.item()],
+                "IoU": [iou_fine.item()],
+                "surface normal similarity": [surface_normal_loss_fine.item()],
+                "depth": [depth_loss_fine.item()]
+            }
+        ).to_csv(
+            file,
+            mode="a",
+            header=False if os.path.exists(file) else True,
+            index=False,
         )

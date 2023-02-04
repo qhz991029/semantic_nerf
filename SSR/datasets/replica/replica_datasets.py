@@ -81,11 +81,11 @@ class ReplicaDatasetCache(Dataset):
                 cv2.imread(self.depth_list[idx], cv2.IMREAD_UNCHANGED) / 1000.0
             )  # uint16 mm depth, then turn depth from mm to meter
             surface_normal = (
-                    torch.from_numpy(
-                        cv2.imread(self.surface_normal_list[idx]).astype(np.float32)
-                    )
-                    / (255 / 2)
-                    - 1
+                torch.from_numpy(
+                    cv2.imread(self.surface_normal_list[idx]).astype(np.float32)
+                )
+                / (255 / 2)
+                - 1
             )
             semantic = cv2.imread(self.semantic_list[idx], cv2.IMREAD_UNCHANGED)
             if self.semantic_instance_dir is not None:

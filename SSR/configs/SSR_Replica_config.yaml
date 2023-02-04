@@ -1,15 +1,15 @@
 experiment:
-    scene_file: "/home/huaizhi_qu/Downloads/room_0/habitat/" # room_0,room_01, etc.
-    save_dir: "/home/huaizhi_qu/workspace/semantic_nerf/logs"  # where to store ckpts and rendering
-    dataset_dir: "/home/huaizhi_qu/Downloads/Replica_Dataset/room_0/Sequence_1"
+    scene_file: "/home/sw99/huaizhi_qu/Replica_Dataset/meta_info/room_0/habitat/" # room_0,room_01, etc.
+    save_dir: "/home/sw99/huaizhi_qu/semantic_nerf/logs"  # where to store ckpts and rendering
+    dataset_dir: "/home/sw99/huaizhi_qu/Replica_Dataset/room_0/Sequence_1"
     convention: "opencv"
     width: 320
     height: 240
     gpu: "0"
 
     enable_multitask: True
-    enable_semantic: False
-    enable_surface_normal: True
+    enable_semantic: True
+    enable_surface_normal: False
     enable_depth: True
     endpoint_feat: False
 
@@ -39,10 +39,10 @@ render:
 train:
     lrate: 5e-4
     lrate_decay: 250e3
-    N_iters: 20000
+    N_iters: 200000
     wgt_sem: 4e-2
     wgt_depth: 1e-2
-    wgt_norm: 1
+    wgt_norm: 4e-2
 
 logging: # logging/saving options
     step_log_print: 1  # 'frequency of console print'

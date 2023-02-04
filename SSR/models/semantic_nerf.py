@@ -130,14 +130,12 @@ class Semantic_NeRF(nn.Module):
         if use_viewdirs:
             self.feature_linear = nn.Linear(w, w)
             self.alpha_linear = nn.Linear(w, 1)
+            self.rgb_linear = nn.Linear(w // 2, 3)
             if enable_multitask:  # here to output everything apart from rgb
                 self.semantic_linear = nn.Sequential(
                     fc_block(w, w // 2), nn.Linear(w // 2, num_semantic_classes)
                 )
-                self.surface_normal_linear = nn.Sequential(
-                    fc_block(w, w // 2), nn.Linear(w // 2, 3)
-                )
-            self.rgb_linear = nn.Linear(w // 2, 3)
+                self.surface_normal_linear = nn.Linear(w // 2, 3)
         else:
             self.output_linear = nn.Linear(w, output_ch)
 
@@ -146,7 +144,7 @@ class Semantic_NeRF(nn.Module):
         Encodes input (xyz+dir) to rgb+sigma+semantics raw output
         Inputs:
             x: [B, self.in_channels_xyz(+self.in_channels_dir)]
-               the embedded vector of 3D xyz position and viewing direction
+                the embedded vector of 3D xyz position and viewing direction
         """
         input_pts, input_views = torch.split(
             x, [self.input_ch, self.input_ch_views], dim=-1
@@ -166,14 +164,10 @@ class Semantic_NeRF(nn.Module):
                     sem_logits = self.semantic_linear(h)  # [..., num_classes]
                 else:
                     sem_logits = torch.zeros(list(alpha.shape[:-1]) + [28], requires_grad=False).cuda()
-                if self.enable_surface_normal:
-                    surface_normal = self.surface_normal_linear(h)
-                else:
-                    surface_normal = torch.zeros(list(alpha.shape[:-1]) + [3], requires_grad=False).cuda()
-            feature = self.feature_linear(h)
 
+            # prepare view dependent feature
+            feature = self.feature_linear(h)
             h = torch.cat([feature, input_views], -1)
-            # color is view dependent
             for i, l in enumerate(self.views_linears):
                 h = self.views_linears[i](h)
                 h = F.relu(h)
@@ -181,7 +175,12 @@ class Semantic_NeRF(nn.Module):
             if show_endpoint:
                 endpoint_feat = h
             rgb = self.rgb_linear(h)  # [..., 3]
-
+            if self.enable_multitask:
+                if self.enable_surface_normal: # surface normal is view dependant
+                    surface_normal = self.surface_normal_linear(h)
+                else:
+                    surface_normal = torch.zeros(list(alpha.shape[:-1]) + [3], requires_grad=False).cuda()
+                    
             if self.enable_multitask:
                 outputs = torch.cat([rgb, alpha, surface_normal, sem_logits], -1)
             else:

@@ -3,9 +3,11 @@ import os
 
 import matplotlib.pyplot as plt
 import yaml
+import torch
 from pytorch_lightning import seed_everything
 from tqdm import trange
 from rich.progress import (
+    track,
     Progress,
     SpinnerColumn,
     TimeElapsedColumn,
@@ -31,7 +33,7 @@ def train():
     parser.add_argument(
         "--config_file",
         type=str,
-        default="/home/huaizhi_qu/workspace/semantic_nerf/SSR/configs/SSR_Replica_config.yaml",
+        default="/home/sw99/huaizhi_qu/semantic_nerf/SSR/configs/SSR_Replica_config.yaml",
         help="config file name.",
     )
     parser.add_argument(
@@ -153,10 +155,10 @@ def train():
     # Read YAML file
     with open(args.config_file, "r") as f:
         config = yaml.safe_load(f)
-    if len(args.gpu) > 0:
-        config["experiment"]["gpu"] = args.gpu
-    print("Experiment GPU is {}.".format(config["experiment"]["gpu"]))
-    trainer.select_gpus(config["experiment"]["gpu"])
+    # if len(args.gpu) > 0:
+    #     config["experiment"]["gpu"] = args.gpu
+    # print("Experiment GPU is {}.".format(config["experiment"]["gpu"]))
+    # trainer.select_gpus(config["experiment"]["gpu"])
     config["experiment"].update(vars(args))
     # Cast intrinsics to right types
     ssr_trainer = trainer.SSRTrainer(config)
@@ -356,22 +358,33 @@ def train():
 
     start = 0
 
-    N_iters = int(float(config["train"]["N_iters"]))
+    N_iters = int(float(config["train"]["N_iters"])) + 1
     global_step = start
     ##########################
     print("Begin")
     #####  Training loop  #####
-    for i in trange(start, N_iters):
-        # torch.cuda.synchronize()
-        # time0 = time.time()
-        ssr_trainer.step(global_step)
-        # torch.cuda.synchronize()
-        # time1 = time.time()
-        # dt = time1 - time0
-        if global_step % 2000 == 0:
-            ssr_trainer.test()
-        global_step += 1
-    file = f"results/{N_iters}"
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        TaskProgressColumn(),
+        TimeElapsedColumn(),
+        TimeRemainingColumn(),
+        MofNCompleteColumn()
+    ) as progress:
+        task = progress.add_task("Training...", total=N_iters)
+        for i in range(start, N_iters):
+            # torch.cuda.synchronize()
+            # time0 = time.time()
+            ssr_trainer.step(global_step)
+            # torch.cuda.synchronize()
+            # time1 = time.time()
+            # dt = time1 - time0
+            if global_step % 2000 == 0:
+                ssr_trainer.test()
+            global_step += 1
+            progress.update(task, advance=1)
+    file = "results/{}".format(N_iters)
     if ssr_trainer.enable_multitask:
         file += "_multitask"
     if ssr_trainer.enable_semantic:
@@ -380,7 +393,6 @@ def train():
         file += "_depth"
     if ssr_trainer.enable_surface_normal:
         file += "_norm"
-    file += ".pdf"
     plt.figure()
     x = list(range(N_iters))
     plt.plot(x, ssr_trainer.img_loss, label="image loss")
@@ -393,8 +405,10 @@ def train():
     plt.xlabel("Iterations")
     plt.title("Loss vs Epoch")
     plt.legend()
-    plt.savefig(file, format="pdf")
-    plt.show()
+    plt.savefig(file + ".pdf", format="pdf")
+    torch.save(ssr_trainer.ssr_net_coarse, file + "_coarse.pt")
+    torch.save(ssr_trainer.ssr_net_fine, file + "_fine.pt")
+    # plt.show()
 
 
 if __name__ == "__main__":

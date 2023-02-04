@@ -1,7 +1,6 @@
 import os
 import shutil
 
-import imageio.v2 as imageio
 import numpy as np
 import torch
 import cv2
@@ -26,10 +25,10 @@ def depth_to_surface_normals(depth: torch.Tensor, surfnorm_scalar=256) -> torch.
     return surface_normals
 
 
-dataset = "/home/huaizhi_qu/Downloads/Replica_Dataset"
+dataset = "/home/sw99/huaizhi_qu/Replica_Dataset"
 scenes = os.listdir(dataset)
 for scene in scenes:
-    if scene == "semantic_info" or scene == "readme.txt":
+    if scene == "semantic_info" or scene == "readme.txt" or scene == "meta_info":
         continue
     sequences = os.listdir(dataset + "/" + scene)
     for sequence in sequences:
@@ -42,7 +41,7 @@ for scene in scenes:
         for i in range(img_num):
             imgs.append(
                 torch.Tensor(
-                    imageio.imread(depth_map_path + "/" + f"depth_{i}.png").astype(
+                    cv2.imread(depth_map_path + "/" + f"depth_{i}.png", cv2.IMREAD_UNCHANGED).astype(
                         float
                     )
                 )
