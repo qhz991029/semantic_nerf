@@ -107,7 +107,7 @@ def calculate_depth_metrics(depth_gt, depth_pred):
     mask1 = depth_pred > 0  # ignore values where prediction is 0 (% complete)
     mask = (depth_gt < 10) * (depth_gt > 0) * mask1
 
-    depth_pred = depth_pred[mask] # Why mask? Those values < 0 are also wrong!
+    depth_pred = depth_pred[mask]  # Why mask? Those values < 0 are also wrong!
     depth_gt = depth_gt[mask]
     abs_diff = np.abs(depth_pred - depth_gt)
     abs_rel = abs_diff / depth_gt

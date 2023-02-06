@@ -1573,7 +1573,6 @@ class SSRTrainer(object):
             param_group["lr"] = new_lrate
 
     def test(self):
-        IoU = MulticlassJaccardIndex(num_classes=self.num_valid_semantic_class, ignore_index=self.ignore_label).cuda()
         mse2psnr = lambda x: (
             -10.0 * torch.log(x) / torch.log(torch.Tensor([10.0]).cuda())
         ).squeeze()
@@ -1615,16 +1614,26 @@ class SSRTrainer(object):
                 surface_normal_fine = output_dict["surface_normal_fine"]
         img_loss_coarse = F.mse_loss(rgb_coarse, sampled_gt_rgb)
         if self.enable_multitask and sematic_available:
-            semantic_loss_coarse = F.cross_entropy(sem_logits_coarse, sampled_gt_semantic - 1, ignore_index=self.ignore_label)
+            semantic_loss_coarse = F.cross_entropy(
+                sem_logits_coarse,
+                sampled_gt_semantic - 1,
+                ignore_index=self.ignore_label,
+            )
             depth_loss_coarse = F.mse_loss(depth_coarse, sampled_gt_depth)
             surface_normal_loss_coarse = F.cosine_similarity(
                 surface_normal_coarse, sampled_surface_normal
             ).mean()
-            iou_coarse = IoU(sem_logits_coarse, sampled_gt_semantic - 1)
+            iou_coarse, _, _, _, _ = calculate_segmentation_metrics(
+                sampled_gt_semantic.cpu() - 1,
+                sem_logits_coarse.softmax(dim=-1).argmax(dim=-1).cpu(),
+                self.num_valid_semantic_class,
+                self.ignore_label,
+            )
         else:
             semantic_loss_coarse = torch.tensor(0)
             depth_loss_coarse = torch.tensor(0)
             surface_normal_loss_coarse = torch.tensor(0)
+            iou_coarse = torch.tensor(0)
 
         with torch.no_grad():
             psnr_coarse = mse2psnr(img_loss_coarse)
@@ -1632,16 +1641,26 @@ class SSRTrainer(object):
         if self.N_importance > 0:
             img_loss_fine = F.mse_loss(rgb_fine, sampled_gt_rgb)
             if self.enable_multitask and sematic_available:
-                semantic_loss_fine = F.cross_entropy(sem_logits_fine, sampled_gt_semantic - 1, ignore_index=self.ignore_label)
+                semantic_loss_fine = F.cross_entropy(
+                    sem_logits_fine,
+                    sampled_gt_semantic - 1,
+                    ignore_index=self.ignore_label,
+                )
                 depth_loss_fine = F.mse_loss(depth_fine, sampled_gt_depth)
                 surface_normal_loss_fine = F.cosine_similarity(
                     surface_normal_fine, sampled_surface_normal
                 ).mean()
-                iou_fine = IoU(sem_logits_fine, sampled_gt_semantic - 1)
+                iou_fine, _, _, _, _ = calculate_segmentation_metrics(
+                    sampled_gt_semantic.cpu() - 1,
+                    sem_logits_fine.softmax(dim=-1).argmax(dim=-1).cpu(),
+                    self.num_valid_semantic_class,
+                    self.ignore_label,
+                )
             else:
                 semantic_loss_fine = torch.tensor(0)
                 depth_loss_fine = torch.tensor(0)
                 surface_normal_loss_fine = torch.tensor(0)
+                iou_fine = torch.tensor(0)
             with torch.no_grad():
                 psnr_fine = mse2psnr(img_loss_fine)
         else:
@@ -1663,7 +1682,9 @@ class SSRTrainer(object):
             )
         )
 
-        file = "/home/sw99/huaizhi_qu/semantic_nerf/results/{}".format(self.config["train"]["N_iters"])
+        file = "/home/sw99/huaizhi_qu/semantic_nerf/results/{}".format(
+            self.config["train"]["N_iters"]
+        )
         if self.enable_multitask:
             file += "_multitask"
         if self.enable_semantic:
@@ -1679,7 +1700,7 @@ class SSRTrainer(object):
                 "psnr": [psnr_fine.item()],
                 "IoU": [iou_fine.item()],
                 "surface normal similarity": [surface_normal_loss_fine.item()],
-                "depth": [depth_loss_fine.item()]
+                "depth": [depth_loss_fine.item()],
             }
         ).to_csv(
             file,

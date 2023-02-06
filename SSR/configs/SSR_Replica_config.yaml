@@ -8,7 +8,7 @@ experiment:
     gpu: "0"
 
     enable_multitask: True
-    enable_semantic: True
+    enable_semantic: False
     enable_surface_normal: False
     enable_depth: True
     endpoint_feat: False

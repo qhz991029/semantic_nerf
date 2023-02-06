@@ -4,6 +4,7 @@ import os
 import matplotlib.pyplot as plt
 import yaml
 import torch
+import numpy as np
 from pytorch_lightning import seed_everything
 from tqdm import trange
 from rich.progress import (
@@ -152,6 +153,7 @@ def train():
 
     args = parser.parse_args()
     seed_everything(42)
+    np.seterr(invalid="ignore")
     # Read YAML file
     with open(args.config_file, "r") as f:
         config = yaml.safe_load(f)
@@ -370,7 +372,7 @@ def train():
         TaskProgressColumn(),
         TimeElapsedColumn(),
         TimeRemainingColumn(),
-        MofNCompleteColumn()
+        MofNCompleteColumn(),
     ) as progress:
         task = progress.add_task("Training...", total=N_iters)
         for i in range(start, N_iters):
