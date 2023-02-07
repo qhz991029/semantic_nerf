@@ -61,9 +61,9 @@ class SSRTrainer(object):
         tf_log_dir = os.path.join(config["experiment"]["save_dir"], "tfb_logs")
         if not os.path.exists(tf_log_dir):
             os.makedirs(tf_log_dir)
-        self.tfb_viz = TFVisualizer(
-            tf_log_dir, config["logging"]["step_log_tfb"], config
-        )
+        # self.tfb_viz = TFVisualizer(
+        #     tf_log_dir, config["logging"]["step_log_tfb"], config
+        # )
 
     def save_config(self):
         # save config to save_dir for the convience of checking config later
@@ -220,12 +220,12 @@ class SSRTrainer(object):
         # plot semantic label legend
         # class_name_string = ["voild"] + [x["name"] for x in annotations["classes"] if x["id"] in np.unique(data.semantic)]
         class_name_string = ["void"] + [x["name"] for x in annotations["classes"]]
-        legend_img_arr = image_utils.plot_semantic_legend(
-            data.semantic_classes,
-            class_name_string,
-            colormap=label_colormap(total_num_classes + 1),
-            save_path=self.save_dir,
-        )
+        # legend_img_arr = image_utils.plot_semantic_legend(
+        #     data.semantic_classes,
+        #     class_name_string,
+        #     colormap=label_colormap(total_num_classes + 1),
+        #     save_path=self.save_dir,
+        # )
         # total_num_classes +1 to include void class
 
         # remap different semantic classes to continuous integers from 0 to num_class-1
@@ -382,42 +382,6 @@ class SSRTrainer(object):
             self.i_batch = 0
             self.rand_idx = torch.randperm(self.num_train * self.H * self.W)
 
-        # add datasets to tfboard for comparison to rendered images
-        self.tfb_viz.tb_writer.add_image(
-            "Train/legend",
-            np.expand_dims(legend_img_arr, axis=0),
-            0,
-            dataformats="NHWC",
-        )
-        self.tfb_viz.tb_writer.add_image(
-            "Train/rgb_GT", train_samples["image"], 0, dataformats="NHWC"
-        )
-        self.tfb_viz.tb_writer.add_image(
-            "Train/depth_GT", self.viz_train_depth, 0, dataformats="NHWC"
-        )
-        self.tfb_viz.tb_writer.add_image(
-            "Train/vis_sem_label_GT", self.viz_train_semantic, 0, dataformats="NHWC"
-        )
-        self.tfb_viz.tb_writer.add_image(
-            "Train/vis_sem_label_GT_clean",
-            self.viz_train_semantic_clean,
-            0,
-            dataformats="NHWC",
-        )
-
-        self.tfb_viz.tb_writer.add_image(
-            "Test/legend", np.expand_dims(legend_img_arr, axis=0), 0, dataformats="NHWC"
-        )
-        self.tfb_viz.tb_writer.add_image(
-            "Test/rgb_GT", test_samples["image"], 0, dataformats="NHWC"
-        )
-        self.tfb_viz.tb_writer.add_image(
-            "Test/depth_GT", self.viz_test_depth, 0, dataformats="NHWC"
-        )
-        self.tfb_viz.tb_writer.add_image(
-            "Test/vis_sem_label_GT", self.viz_test_semantic, 0, dataformats="NHWC"
-        )
-
     def prepare_data_replica_nyu_cnn(self, data, gpu=True):
         self.ignore_label = -1  # default value in nn.CrossEntropy
 
@@ -528,12 +492,12 @@ class SSRTrainer(object):
             colour_map_np[1:, :]
         )  # used in func render_path to visualise rendered segmentation without void label
 
-        legend_img_arr = image_utils.plot_semantic_legend(
-            np.unique(data.semantic_classes),
-            class_name_string,
-            colormap=colour_map_np,
-            save_path=self.save_dir,
-        )
+        # legend_img_arr = image_utils.plot_semantic_legend(
+        #     np.unique(data.semantic_classes),
+        #     class_name_string,
+        #     colormap=colour_map_np,
+        #     save_path=self.save_dir,
+        # )
 
         # remap different semantic classes to continuous integers from 0 to num_class-1
         self.semantic_classes_remap = torch.from_numpy(
@@ -708,48 +672,6 @@ class SSRTrainer(object):
             self.i_batch = 0
             self.rand_idx = torch.randperm(self.num_train * self.H * self.W)
 
-        # add datasets to tfboard for comparison to rendered images
-        self.tfb_viz.tb_writer.add_image(
-            "Train/legend",
-            np.expand_dims(legend_img_arr, axis=0),
-            0,
-            dataformats="NHWC",
-        )
-        self.tfb_viz.tb_writer.add_image(
-            "Train/rgb_GT", train_samples["image"], 0, dataformats="NHWC"
-        )
-        self.tfb_viz.tb_writer.add_image(
-            "Train/depth_GT", self.viz_train_depth, 0, dataformats="NHWC"
-        )
-        self.tfb_viz.tb_writer.add_image(
-            "Train/vis_CNN_sem_label", self.viz_train_semantic, 0, dataformats="NHWC"
-        )
-        self.tfb_viz.tb_writer.add_image(
-            "Train/vis_CNN_sem_label_clean",
-            self.viz_train_semantic_clean,
-            0,
-            dataformats="NHWC",
-        )
-        self.tfb_viz.tb_writer.add_image(
-            "Train/vis_GT_sem_label", self.viz_train_semantic_gt, 0, dataformats="NHWC"
-        )
-
-        self.tfb_viz.tb_writer.add_image(
-            "Test/legend", np.expand_dims(legend_img_arr, axis=0), 0, dataformats="NHWC"
-        )
-        self.tfb_viz.tb_writer.add_image(
-            "Test/rgb_GT", test_samples["image"], 0, dataformats="NHWC"
-        )
-        self.tfb_viz.tb_writer.add_image(
-            "Test/depth_GT", self.viz_test_depth, 0, dataformats="NHWC"
-        )
-        self.tfb_viz.tb_writer.add_image(
-            "Test/vis_CNN_sem_label", self.viz_test_semantic, 0, dataformats="NHWC"
-        )
-        self.tfb_viz.tb_writer.add_image(
-            "Test/vis_GT_sem_label", self.viz_test_semantic_gt, 0, dataformats="NHWC"
-        )
-
     def prepare_data_scannet(self, data, gpu=True):
         self.ignore_label = -1
 
@@ -825,12 +747,12 @@ class SSRTrainer(object):
             "other prop",
         ]  # NYUv2-40-class
 
-        legend_img_arr = image_utils.plot_semantic_legend(
-            data.semantic_classes,
-            class_name_string,
-            colormap=data.colour_map_np,
-            save_path=self.save_dir,
-        )
+        # legend_img_arr = image_utils.plot_semantic_legend(
+        #     data.semantic_classes,
+        #     class_name_string,
+        #     colormap=data.colour_map_np,
+        #     save_path=self.save_dir,
+        # )
         # total_num_classes +1 to include void class
 
         # remap different semantic classes to continuous integers from 0 to num_class-1
@@ -975,42 +897,6 @@ class SSRTrainer(object):
         ):  # False means we need to sample from all rays instead of rays from one random image
             self.i_batch = 0
             self.rand_idx = torch.randperm(self.num_train * self.H * self.W)
-
-        # add datasets to tfboard for comparison to rendered images
-        self.tfb_viz.tb_writer.add_image(
-            "Train/legend",
-            np.expand_dims(legend_img_arr, axis=0),
-            0,
-            dataformats="NHWC",
-        )
-        self.tfb_viz.tb_writer.add_image(
-            "Train/rgb_GT", train_samples["image"], 0, dataformats="NHWC"
-        )
-        self.tfb_viz.tb_writer.add_image(
-            "Train/depth_GT", self.viz_train_depth, 0, dataformats="NHWC"
-        )
-        self.tfb_viz.tb_writer.add_image(
-            "Train/vis_sem_label_GT", self.viz_train_semantic, 0, dataformats="NHWC"
-        )
-        self.tfb_viz.tb_writer.add_image(
-            "Train/vis_sem_label_GT_clean",
-            self.viz_train_semantic_clean,
-            0,
-            dataformats="NHWC",
-        )
-
-        self.tfb_viz.tb_writer.add_image(
-            "Test/legend", np.expand_dims(legend_img_arr, axis=0), 0, dataformats="NHWC"
-        )
-        self.tfb_viz.tb_writer.add_image(
-            "Test/rgb_GT", test_samples["image"], 0, dataformats="NHWC"
-        )
-        self.tfb_viz.tb_writer.add_image(
-            "Test/depth_GT", self.viz_test_depth, 0, dataformats="NHWC"
-        )
-        self.tfb_viz.tb_writer.add_image(
-            "Test/vis_sem_label_GT", self.viz_test_semantic, 0, dataformats="NHWC"
-        )
 
     def init_rays(self):
 
