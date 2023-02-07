@@ -15,6 +15,7 @@ import yaml
 from imgviz import label_colormap, depth2rgb
 from torchmetrics.classification import MulticlassJaccardIndex
 import pandas as pd
+from timm import optim
 
 from tqdm import tqdm
 from SSR.models.model_utils import raw2outputs
@@ -1088,7 +1089,7 @@ class SSRTrainer(object):
             assert False
 
         # sample rays and ground truth data
-        sematic_available_flag = 1
+        semantic_available_flag = 1
 
         if no_batching:  # sample random pixels from one random images
             batch_index, hw_index = sampling_index(self.n_rays, num_img, h, w)
@@ -1103,7 +1104,7 @@ class SSRTrainer(object):
             gt_surface_normal = surface_normal.reshape(sample_num, -1, 3)[
                 batch_index, hw_index, :
             ].reshape(-1, 3)
-            sematic_available_flag = self.mask_ids[
+            semantic_available_flag = self.mask_ids[
                 batch_index
             ]  # semantic available if mask_id is 1 (train with rgb loss and semantic loss) else 0 (train with rgb loss only)
             gt_semantic = semantic.reshape(sample_num, -1)[
@@ -1144,7 +1145,7 @@ class SSRTrainer(object):
                 sampled_gt_depth,
                 sampled_gt_surface_normal,
                 sampled_gt_semantic,
-                sematic_available_flag,
+                semantic_available_flag,
             )
         else:
             return sampled_rays, sampled_gt_rgb
@@ -1393,7 +1394,8 @@ class SSRTrainer(object):
             grad_vars += list(model_fine.parameters())
 
         # Create optimizer
-        optimizer = torch.optim.Adam(params=grad_vars, lr=self.lrate)
+        # optimizer = torch.optim.Adam(params=grad_vars, lr=self.lrate)
+        optimizer = optim.Lamb(params=grad_vars)
 
         self.ssr_net_coarse = model
         self.ssr_net_fine = model_fine
@@ -1449,7 +1451,7 @@ class SSRTrainer(object):
                 sampled_gt_depth,
                 sampled_surface_normal,
                 sampled_gt_semantic,
-                sematic_available,
+                semantic_available,
             ) = sampled_data
         else:
             sampled_rays, sampled_gt_rgb = sampled_data
@@ -1479,7 +1481,7 @@ class SSRTrainer(object):
 
         img_loss_coarse = F.mse_loss(rgb_coarse, sampled_gt_rgb)
 
-        if self.enable_multitask and sematic_available:
+        if self.enable_multitask and semantic_available:
             semantic_loss_coarse = crossentropy_loss(
                 sem_logits_coarse, sampled_gt_semantic
             )
@@ -1498,7 +1500,7 @@ class SSRTrainer(object):
 
         if self.N_importance > 0:
             img_loss_fine = F.mse_loss(rgb_fine, sampled_gt_rgb)
-            if self.enable_multitask and sematic_available:
+            if self.enable_multitask and semantic_available:
                 semantic_loss_fine = (
                     crossentropy_loss(sem_logits_fine, sampled_gt_semantic)
                     if self.enable_semantic
@@ -1561,16 +1563,16 @@ class SSRTrainer(object):
                 total_loss += total_sem_loss * wgt_sem_loss
             if self.enable_surface_normal:
                 total_loss -= total_norm_loss * wgt_norm_loss
-
+        total_loss += total_depth_loss * wgt_depth_loss
         total_loss.backward()
         self.optimizer.step()
 
         ###   update learning rate   ###
-        decay_rate = 0.1
-        decay_steps = self.lrate_decay
-        new_lrate = self.lrate * (decay_rate ** (global_step / decay_steps))
-        for param_group in self.optimizer.param_groups:
-            param_group["lr"] = new_lrate
+        # decay_rate = 0.1
+        # decay_steps = self.lrate_decay
+        # new_lrate = self.lrate * (decay_rate ** (global_step / decay_steps))
+        # for param_group in self.optimizer.param_groups:
+        #     param_group["lr"] = new_lrate
 
     def test(self):
         mse2psnr = lambda x: (
@@ -1586,7 +1588,7 @@ class SSRTrainer(object):
                 sampled_gt_depth,
                 sampled_surface_normal,
                 sampled_gt_semantic,
-                sematic_available,
+                semantic_available,
             ) = sampled_data
         else:
             sampled_rays, sampled_gt_rgb = sampled_data
@@ -1613,7 +1615,7 @@ class SSRTrainer(object):
                 # sem_label_fine = logits_2_label(sem_logits_fine)
                 surface_normal_fine = output_dict["surface_normal_fine"]
         img_loss_coarse = F.mse_loss(rgb_coarse, sampled_gt_rgb)
-        if self.enable_multitask and sematic_available:
+        if self.enable_multitask and semantic_available:
             semantic_loss_coarse = F.cross_entropy(
                 sem_logits_coarse,
                 sampled_gt_semantic - 1,
@@ -1640,7 +1642,7 @@ class SSRTrainer(object):
 
         if self.N_importance > 0:
             img_loss_fine = F.mse_loss(rgb_fine, sampled_gt_rgb)
-            if self.enable_multitask and sematic_available:
+            if self.enable_multitask and semantic_available:
                 semantic_loss_fine = F.cross_entropy(
                     sem_logits_fine,
                     sampled_gt_semantic - 1,
@@ -1698,9 +1700,11 @@ class SSRTrainer(object):
             {
                 "step": [self.global_step],
                 "psnr": [psnr_fine.item()],
-                "IoU": [iou_fine.item()],
-                "surface normal similarity": [surface_normal_loss_fine.item()],
-                "depth": [depth_loss_fine.item()],
+                "IoU": [iou_fine.item()] if self.enable_semantic else [0],
+                "surface normal similarity": [surface_normal_loss_fine.item()]
+                if self.enable_surface_normal
+                else [0],
+                "depth": [depth_loss_fine.item()] if self.enable_depth else [0],
             }
         ).to_csv(
             file,
