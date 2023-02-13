@@ -58,7 +58,6 @@ for scene in scenes:
             shutil.rmtree(surface_normal_path)
             os.makedirs(surface_normal_path)
         for i in track(range(len(surface_normals))):
-            # torch.save(surface_normals[i].clone(), surface_normal_path + f"/surface_normal_{i}.pt")
             cv2.imwrite(
                 surface_normal_path + f"/surface_normal_{i}.png", surface_normals[i]
             )

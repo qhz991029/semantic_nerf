@@ -5,12 +5,12 @@ experiment:
     convention: "opencv"
     width: 320
     height: 240
-    gpu: "0"
+    gpu: "3"
 
     enable_multitask: True
     enable_semantic: True
-    enable_surface_normal: True
-    enable_depth: True
+    enable_surface_normal: False
+    enable_depth: False
     endpoint_feat: False
 
 model:
@@ -39,7 +39,7 @@ render:
 train:
     lrate: 5e-4
     lrate_decay: 250e3
-    N_iters: 150000
+    N_iters: 200000
     wgt_sem: 4e-2
     wgt_depth: 1e-2
     wgt_norm: 4e-2

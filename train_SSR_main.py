@@ -157,10 +157,10 @@ def train():
     # Read YAML file
     with open(args.config_file, "r") as f:
         config = yaml.safe_load(f)
-    # if len(args.gpu) > 0:
-    #     config["experiment"]["gpu"] = args.gpu
-    # print("Experiment GPU is {}.".format(config["experiment"]["gpu"]))
-    # trainer.select_gpus(config["experiment"]["gpu"])
+    if len(args.gpu) > 0:
+        config["experiment"]["gpu"] = args.gpu
+    print("Experiment GPU is {}.".format(config["experiment"]["gpu"]))
+    trainer.select_gpus(config["experiment"]["gpu"])
     config["experiment"].update(vars(args))
     # Cast intrinsics to right types
     ssr_trainer = trainer.SSRTrainer(config)
@@ -386,7 +386,7 @@ def train():
                 ssr_trainer.test()
             global_step += 1
             progress.update(task, advance=1)
-    file = "results/{}".format(N_iters)
+    file = "results/{}".format(N_iters - 1)
     if ssr_trainer.enable_multitask:
         file += "_multitask"
     if ssr_trainer.enable_semantic:

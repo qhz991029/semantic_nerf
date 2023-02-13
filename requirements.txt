@@ -13,3 +13,5 @@ trimesh
 imgviz
 open3d
 opencv-python
+rich
+pytorch_lightning

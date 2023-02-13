@@ -28,7 +28,7 @@ from SSR.training.training_utils import (
     calculate_depth_metrics,
 )
 from SSR.utils import image_utils
-from SSR.visualisation.tensorboard_vis import TFVisualizer
+# from SSR.visualisation.tensorboard_vis import TFVisualizer
 
 
 def select_gpus(gpus):
@@ -1280,8 +1280,7 @@ class SSRTrainer(object):
             grad_vars += list(model_fine.parameters())
 
         # Create optimizer
-        # optimizer = torch.optim.Adam(params=grad_vars, lr=self.lrate)
-        optimizer = optim.Lamb(params=grad_vars)
+        optimizer = torch.optim.Adam(params=grad_vars, lr=self.lrate)
 
         self.ssr_net_coarse = model
         self.ssr_net_fine = model_fine
@@ -1449,16 +1448,18 @@ class SSRTrainer(object):
                 total_loss += total_sem_loss * wgt_sem_loss
             if self.enable_surface_normal:
                 total_loss -= total_norm_loss * wgt_norm_loss
+            if self.enable_depth:
+                total_loss += total_depth_loss * wgt_depth_loss
         total_loss += total_depth_loss * wgt_depth_loss
         total_loss.backward()
         self.optimizer.step()
 
-        ###   update learning rate   ###
-        # decay_rate = 0.1
-        # decay_steps = self.lrate_decay
-        # new_lrate = self.lrate * (decay_rate ** (global_step / decay_steps))
-        # for param_group in self.optimizer.param_groups:
-        #     param_group["lr"] = new_lrate
+        ##   update learning rate   ##
+        decay_rate = 0.1
+        decay_steps = self.lrate_decay
+        new_lrate = self.lrate * (decay_rate ** (global_step / decay_steps))
+        for param_group in self.optimizer.param_groups:
+            param_group["lr"] = new_lrate
 
     def test(self):
         mse2psnr = lambda x: (
@@ -1566,7 +1567,7 @@ class SSRTrainer(object):
                 psnr_fine,
                 iou_fine if self.enable_semantic else 0,
                 surface_normal_loss_fine if self.enable_surface_normal else 0,
-                depth_loss_fine if self.enable_depth else 0,
+                depth_loss_fine
             )
         )
 
@@ -1590,7 +1591,7 @@ class SSRTrainer(object):
                 "surface normal similarity": [surface_normal_loss_fine.item()]
                 if self.enable_surface_normal
                 else [0],
-                "depth": [depth_loss_fine.item()] if self.enable_depth else [0],
+                "depth": [depth_loss_fine.item()],
             }
         ).to_csv(
             file,

@@ -73,7 +73,7 @@ def calculate_segmentation_metrics(
         true_labels, predicted_labels, labels=list(range(number_classes))
     )
     norm_conf_mat = np.transpose(
-        np.transpose(conf_mat) / conf_mat.astype(np.float).sum(axis=1)
+        np.transpose(conf_mat) / conf_mat.astype(np.float32).sum(axis=1)
     )
 
     missing_class_mask = np.isnan(

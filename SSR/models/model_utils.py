@@ -111,7 +111,7 @@ def raw2outputs(
     if enable_multitask:
         assert num_sem_class > 0
         # https://discuss.pytorch.org/t/multi-class-cross-entropy-loss-and-softmax-in-pytorch/24920/2
-        sem_logits = raw[..., 4 : 4 + num_sem_class]  # [N_rays, N_samples, num_class]
+        sem_logits = raw[..., 7 : 7 + num_sem_class]  # [N_rays, N_samples, num_class]
         sem_map = torch.sum(weights[..., None] * sem_logits, -2)  # [N_rays, num_class]
     else:
         sem_map = torch.tensor(0)
